@@ -177,7 +177,8 @@ window.__ModuleLoader__.load({
 		 */
 		function findModel(groups, provider, model) {
 			const group = groups.find((entry) => entry.id === provider);
-			return group === void 0 ? void 0 : group.models.find((entry) => entry.id === model);
+			if (group === void 0 || !Array.isArray(group.models)) return void 0;
+			return group.models.find((entry) => entry.id === model);
 		}
 
 		/**
@@ -222,10 +223,11 @@ window.__ModuleLoader__.load({
 		 * @returns matching models in display order.
 		 */
 		function rankModels(models, query) {
+			const list = Array.isArray(models) ? models : [];
 			const needle = query.trim().toLowerCase();
-			if (needle === "") return models;
+			if (needle === "") return list;
 			const scored = [];
-			for (const model of models) {
+			for (const model of list) {
 				const name = String(model.name ?? model.id).toLowerCase();
 				const id = String(model.id).toLowerCase();
 				let score = -1;
@@ -615,7 +617,7 @@ window.__ModuleLoader__.load({
 				[groups, query],
 			);
 			const flat = useMemo(() => filtered.flatMap((group) => group.models.map((entry) => ({ group: group.id, model: entry }))), [filtered]);
-			const showSearch = groups.reduce((total, group) => total + group.models.length, 0) > SEARCH_THRESHOLD;
+			const showSearch = groups.reduce((total, group) => total + (Array.isArray(group.models) ? group.models.length : 0), 0) > SEARCH_THRESHOLD;
 
 			// Anchor above the trigger, keeping the panel inside the viewport. This
 			// runs before paint so the panel never flashes at the wrong origin.
@@ -889,8 +891,12 @@ window.__ModuleLoader__.load({
 				const models = scope.modelDirectories;
 				const sessions = scope.sessions;
 				const isSubagent = (sessionId) => {
-					const read = sessions?.subagentAddress;
-					return typeof read === "function" ? read.call(sessions, sessionId) !== void 0 : false;
+					try {
+						const read = sessions?.subagentAddress;
+						return typeof read === "function" ? read.call(sessions, sessionId) !== void 0 : false;
+					} catch {
+						return false;
+					}
 				};
 
 				scope.slots.inject("conversation.input.model", () => {
@@ -904,7 +910,28 @@ window.__ModuleLoader__.load({
 								priority: -1,
 								locale: NS,
 								inject: (sessionId) => {
-									const directory = models.directoryFor(sessionId);
+									// This runs INSIDE the slot entry's error boundary, and a
+									// throw here retires the entry for good: the seat silently
+									// falls back to the shipped control until the slot is
+									// re-declared (which is exactly what "the plugin stopped
+									// working after I switched workspace" looked like). A
+									// session whose client-side scope is not materialized yet
+									// must therefore degrade to "nothing to show" and recover
+									// by itself, never to an exception.
+									let directory = null;
+									try {
+										directory = models.directoryFor(sessionId);
+									} catch {
+										directory = null;
+									}
+									if (directory === null) {
+										return {
+											available: false,
+											directory: null,
+											load: () => {},
+											select: () => Promise.resolve({ ok: true, value: void 0 }),
+										};
+									}
 									const available = !isSubagent(sessionId);
 									return {
 										available,

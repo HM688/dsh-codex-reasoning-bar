@@ -1,47 +1,47 @@
-{
-  "name": "dsh-codex-reasoning-bar",
-  "version": "1.0.0",
-  "description": "CodeX 一样的推理等级调整条：在 DeepSeek Harness 的模型选择面板里，用可拖动的粒子滑条调整推理强度，取代原来的推理等级列表。",
-  "type": "module",
-  "license": "MIT",
-  "keywords": [
-    "dsh",
-    "dsh-plugin",
-    "deepseek-harness",
-    "cordis",
-    "cordis-plugin",
-    "reasoning-effort",
-    "reasoning",
-    "slider",
-    "model-picker",
-    "codex"
-  ],
-  "exports": {
-    ".": "./index.js",
-    "./client": "./client.js"
-  },
-  "files": [
-    "index.js",
-    "client.js",
-    "cordis.patch.yml",
-    "README.md",
-    "LICENSE"
-  ],
-  "meta": {
-    "title": "推理等级调整条",
-    "description": "CodeX 一样的推理等级调整条：可拖动的粒子滑条，取代模型菜单里的推理强度列表。"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-model-selection",
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ]
-    }
-  }
+﻿{
+    "name":  "dsh-codex-reasoning-bar",
+    "version":  "1.0.1",
+    "description":  "CodeX 一样的推理等级调整条：在 DeepSeek Harness 的模型选择面板里，用可拖动的粒子滑条调整推理强度，取代原来的推理等级列表。",
+    "type":  "module",
+    "license":  "MIT",
+    "keywords":  [
+                     "dsh",
+                     "dsh-plugin",
+                     "deepseek-harness",
+                     "cordis",
+                     "cordis-plugin",
+                     "reasoning-effort",
+                     "reasoning",
+                     "slider",
+                     "model-picker",
+                     "codex"
+                 ],
+    "exports":  {
+                    ".":  "./index.js",
+                    "./client":  "./client.js"
+                },
+    "files":  [
+                  "index.js",
+                  "client.js",
+                  "cordis.patch.yml",
+                  "README.md",
+                  "LICENSE"
+              ],
+    "meta":  {
+                 "title":  "推理等级调整条",
+                 "description":  "CodeX 一样的推理等级调整条：可拖动的粒子滑条，取代模型菜单里的推理强度列表。"
+             },
+    "dsh":  {
+                "bundle":  {
+                               "patch":  "./cordis.patch.yml"
+                           },
+                "client":  {
+                               "platform":  "web",
+                               "immediately":  true,
+                               "inject":  [
+                                              "@deepseek-ai/dsh-client-ui-model-selection",
+                                              "@deepseek-ai/dsh-client-ui-conversation"
+                                          ]
+                           }
+            }
 }
