@@ -121,6 +121,7 @@ window.__ModuleLoader__.load({
 			"menu.aria": "模型与推理强度",
 			"trigger.select": "选择模型",
 			"trigger.preparing": "正在准备该会话的模型目录…",
+			"notReady.hint": "这个会话的模型目录暂时解析不出来，下面的原文是原因：",
 			"trigger.aria": "选择模型，当前 {model}",
 			"trigger.ariaEffort": "选择模型，当前 {model}，推理强度 {effort}",
 			"trigger.loading": "正在应用选择",
@@ -141,6 +142,7 @@ window.__ModuleLoader__.load({
 			"menu.aria": "Model and reasoning effort",
 			"trigger.select": "Select model",
 			"trigger.preparing": "Preparing this session's model directory…",
+			"notReady.hint": "This session's model directory could not be resolved. The reason follows:",
 			"trigger.aria": "Select model, current {model}",
 			"trigger.ariaEffort": "Select model, current {model}, reasoning effort {effort}",
 			"trigger.loading": "Applying selection",
@@ -783,12 +785,12 @@ window.__ModuleLoader__.load({
 			})();
 			if (subagent) return null;
 
-			// Before the session's directory resolves — and in the unlikely case it
-			// never does — a placeholder trigger holds the seat's place instead of
-			// leaving a hole in the composer row. Clicking it retries immediately;
-			// the poll above keeps retrying underneath either way. Note that this
-			// state is not a regression against the shipped control: that one asks
-			// the very same directory for its data.
+			// Before the session's directory resolves — and if it never does — a
+			// placeholder trigger holds the seat's place instead of leaving a hole
+			// in the composer row. Clicking it opens the reason instead of failing
+			// silently: the message is the resolver's own error text, which is the
+			// only channel this plugin has for reporting a client-side failure (the
+			// browser console is not reachable from the Host).
 			if (directory === null) {
 				const why = resolved === null || resolved.error === null ? t("trigger.preparing") : resolved.error;
 				return h(
@@ -803,12 +805,48 @@ window.__ModuleLoader__.load({
 							className: "mm_trigger",
 							title: why,
 							"aria-label": `${t("trigger.select")} — ${why}`,
-							onClick: () => retry(),
+							"aria-haspopup": "dialog",
+							"aria-expanded": open,
+							onClick: () => setOpen((value) => !value),
 						},
 						h("span", { className: "mm_triggerIcon" }, h(ModelGlyph)),
 						h("span", { className: "mm_triggerLabel" }, t("trigger.select")),
-						h("span", { className: "mm_chevron" }, h(ChevronDown)),
+						h("span", { className: "mm_chevron", "data-open": open ? "true" : void 0 }, h(ChevronDown)),
 					),
+					open && placement !== null
+						? ReactDOM.createPortal(
+								h(
+									"div",
+									{
+										ref: panelRef,
+										className: "mm_panel",
+										role: "dialog",
+										"aria-label": t("trigger.select"),
+										tabIndex: -1,
+										style: { left: placement.left, bottom: placement.bottom, width: placement.width },
+									},
+									h(
+										"div",
+										{ className: "mm_field" },
+										h("div", { className: "mm_fieldHead" }, h("span", { className: "mm_rowLabel" }, t("trigger.select"))),
+										h("div", { className: "mm_note" }, t("notReady.hint")),
+										h("div", { className: "mm_error" }, why),
+									),
+									h(
+										"button",
+										{
+											type: "button",
+											className: "mm_row",
+											onClick: () => {
+												if (retry()) setOpen(false);
+											},
+										},
+										h("span", { className: "mm_rowLabel" }, t("action.retry")),
+									),
+								),
+								document.body,
+							)
+						: null,
 				);
 			}
 
