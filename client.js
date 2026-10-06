@@ -33,6 +33,12 @@ window.__ModuleLoader__.load({
 
 		/** Locale namespace for this plugin's dictionaries. */
 		const NS = "dsh-reasoning-dial";
+		/**
+		 * Build marker shown in the not-ready panel. It answers the first question
+		 * of every diagnosis — which build is the page actually running — because a
+		 * reinstalled bundle is not proof that the browser reloaded its module.
+		 */
+		const BUILD = "1.0.5";
 
 		/** Geometry shared by the stylesheet and the inline detent positions. */
 		const THUMB = 26;
@@ -86,7 +92,9 @@ window.__ModuleLoader__.load({
 .mm_optionLabel{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mm_optionMark{flex:none;display:flex;color:var(--dsw-alias-brand-primary,#4d6bfe)}
 .mm_note{padding:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
-.mm_error{margin-top:4px;padding:6px 8px;border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-interactive-bg-hover-danger,rgba(220,80,80,.16));color:var(--dsw-alias-state-error-primary,#e5484d);font-size:12px;line-height:18px}
+.mm_error{margin-top:4px;padding:6px 8px;border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-interactive-bg-hover-danger,rgba(220,80,80,.16));color:var(--dsw-alias-state-error-primary,#e5484d);font-size:12px;line-height:18px;word-break:break-all}
+.mm_probe{margin-top:4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-caption,var(--dsw-alias-label-secondary))}
+.mm_stack{margin:4px 0 0;padding:6px 8px;border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12));color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));font-size:10px;line-height:14px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow:auto}
 .mm_retry{margin-left:6px;border:0;background:none;color:inherit;font:inherit;font-size:12px;text-decoration:underline;cursor:pointer;padding:0}
 .dsrd_track{position:relative;box-sizing:border-box;width:100%;height:30px;padding:0;border:0;border-radius:var(--dsw-radius-md,8px);background:transparent;cursor:grab;touch-action:none;outline:none;transition:background-color 140ms ease}
 .dsrd_track:hover,.dsrd_track[data-dsrd-active='true']{background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,.12))}
@@ -838,6 +846,17 @@ window.__ModuleLoader__.load({
 										h("div", { className: "mm_fieldHead" }, h("span", { className: "mm_rowLabel" }, t("trigger.select"))),
 										h("div", { className: "mm_note" }, t("notReady.hint")),
 										h("div", { className: "mm_error" }, why),
+										h(
+											"div",
+											{ className: "mm_probe" },
+											`build ${resolved === null || resolved.probe === void 0 ? BUILD : resolved.probe.build}` +
+												`  ·  get():${resolved !== null && resolved.probe !== void 0 && resolved.probe.viaGet ? "y" : "n"}` +
+												`  prop():${resolved !== null && resolved.probe !== void 0 && resolved.probe.viaProp ? "y" : "n"}` +
+												`  same:${resolved !== null && resolved.probe !== void 0 && resolved.probe.same ? "y" : "n"}`,
+										),
+										resolved === null || resolved.stack === void 0 || resolved.stack === ""
+											? null
+											: h("pre", { className: "mm_stack" }, resolved.stack),
 									),
 									h(
 										"button",
@@ -1060,14 +1079,41 @@ window.__ModuleLoader__.load({
 									return {
 										available: () => !isSubagent(sessionId),
 										resolve: () => {
+											// Two lookups on purpose. `ctx.get` is the registry
+											// lookup (what the shipped code uses), while the
+											// property form is the one this plugin's injection
+											// bound; reporting both, plus whether they agree,
+											// separates "the service is gone" from "this scope
+											// still holds a retired instance".
+											const probe = { build: BUILD, viaGet: false, viaProp: false, same: false };
+											let viaGet = null;
 											try {
-												const models = scope.modelDirectories;
-												if (models === void 0 || models === null) {
-													return { directory: null, error: "modelDirectories is not available in this context" };
-												}
-												return { directory: models.directoryFor(sessionId), error: null };
+												viaGet = scope.get("modelDirectories");
+												probe.viaGet = viaGet !== null && viaGet !== void 0;
+											} catch {
+												probe.viaGet = false;
+											}
+											let viaProp = null;
+											try {
+												viaProp = scope.modelDirectories;
+												probe.viaProp = viaProp !== null && viaProp !== void 0;
+											} catch {
+												probe.viaProp = false;
+											}
+											probe.same = viaGet !== null && viaProp !== null && viaGet === viaProp;
+											const service = viaGet ?? viaProp;
+											if (service === null || service === void 0) {
+												return { directory: null, error: "modelDirectories not found by either lookup", stack: "", probe };
+											}
+											try {
+												return { directory: service.directoryFor(sessionId), error: null, stack: "", probe };
 											} catch (error) {
-												return { directory: null, error: String((error && error.message) || error) };
+												const message = String((error && error.message) || error);
+												const stack = String((error && error.stack) || "")
+													.split("\n")
+													.slice(0, 5)
+													.join("\n");
+												return { directory: null, error: message, stack, probe };
 											}
 										},
 									};
