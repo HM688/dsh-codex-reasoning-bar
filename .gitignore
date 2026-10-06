@@ -1,0 +1,14 @@
+# 构建产物 / 本机笔记：不需要进仓库
+dsh-codex-reasoning-bar-*.tgz
+LOCAL-NOTES.md
+
+# 依赖与缓存（如果有人本地跑工具链）
+node_modules/
+.pnpm-store/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

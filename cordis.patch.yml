@@ -1,0 +1,6 @@
+# Loader patch for the dsh-codex-reasoning-bar bundle. Installed by
+# `plugin_manager` (action: install_bundle) or `dsh plugin`, which copy this row
+# into the profile; the row id is what `set_plugin` toggles.
+- insert:
+    - id: codex-reasoning-bar
+      name: "dsh-codex-reasoning-bar"
