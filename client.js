@@ -597,13 +597,20 @@ window.__ModuleLoader__.load({
 			useEffect(() => {
 				let stopped = false;
 				let timer = 0;
-				const attempt = () => {
+				// A resolved directory is re-checked on a slow beat as well: the
+				// client library re-registers `modelDirectories` when the connection
+				// generation changes, and the replacement hands back a different
+				// directory instance for the same session. Without this the seat would
+				// keep rendering a retired directory whose store no longer updates.
+				const tick = () => {
 					if (stopped) return;
 					const next = resolveRef.current();
-					setResolved(next);
-					if (next.directory === null) timer = setTimeout(attempt, 250);
+					setResolved((prev) =>
+						prev !== null && prev.directory === next.directory && prev.error === next.error ? prev : next,
+					);
+					timer = setTimeout(tick, next.directory === null ? 250 : 2000);
 				};
-				attempt();
+				tick();
 				return () => {
 					stopped = true;
 					clearTimeout(timer);
@@ -1011,12 +1018,17 @@ window.__ModuleLoader__.load({
 			const t = ctx.locale.bind(NS);
 
 			ctx.inject(["slots", "modelDirectories", "sessions"], (scope) => {
-				const models = scope.modelDirectories;
-				const sessions = scope.sessions;
+				// Every service is read through the live context at CALL time, never
+				// captured once. The client library re-registers `modelDirectories`
+				// when the connection generation changes; a captured instance keeps
+				// pointing at the retired registration, whose context no longer holds
+				// the `remote.session` injection. Calls against it fail forever with
+				// `cannot get property "remote.session" without inject` — and because
+				// one seat serves every session, they fail for every session at once.
 				const isSubagent = (sessionId) => {
 					try {
-						const read = sessions?.subagentAddress;
-						return typeof read === "function" ? read.call(sessions, sessionId) !== void 0 : false;
+						const read = scope.sessions?.subagentAddress;
+						return typeof read === "function" ? read.call(scope.sessions, sessionId) !== void 0 : false;
 					} catch {
 						return false;
 					}
@@ -1049,6 +1061,10 @@ window.__ModuleLoader__.load({
 										available: () => !isSubagent(sessionId),
 										resolve: () => {
 											try {
+												const models = scope.modelDirectories;
+												if (models === void 0 || models === null) {
+													return { directory: null, error: "modelDirectories is not available in this context" };
+												}
 												return { directory: models.directoryFor(sessionId), error: null };
 											} catch (error) {
 												return { directory: null, error: String((error && error.message) || error) };
