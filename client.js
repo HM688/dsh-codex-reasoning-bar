@@ -1036,7 +1036,19 @@ window.__ModuleLoader__.load({
 			ctx.effect(() => ctx.locale.register(NS, { zh, en }), "reasoning-dial: dictionaries");
 			const t = ctx.locale.bind(NS);
 
-			ctx.inject(["slots", "modelDirectories", "sessions"], (scope) => {
+			// `remote` and `remote.session` are NOT optional here, even though this
+			// plugin never touches them directly. Cordis wraps service methods in a
+			// traceable proxy that records the CALLER's context, so the nested
+			// `this.ctx.remote.session` inside the shipped `directoryFor` is resolved
+			// against THIS context. Without these two entries the call fails with
+			//
+			//   cannot get property "remote.session" without inject
+			//
+			// from inside a service this plugin does not own — while the shipped
+			// control, calling the very same method from its own plugin tree, works
+			// fine. The shipped resolver declares exactly these injects for itself:
+			// static inject = ["sessions", "remote", "remote.session"].
+			ctx.inject(["slots", "modelDirectories", "sessions", "remote", "remote.session"], (scope) => {
 				// Every service is read through the live context at CALL time, never
 				// captured once. The client library re-registers `modelDirectories`
 				// when the connection generation changes; a captured instance keeps
