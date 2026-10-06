@@ -38,7 +38,7 @@ window.__ModuleLoader__.load({
 		 * of every diagnosis — which build is the page actually running — because a
 		 * reinstalled bundle is not proof that the browser reloaded its module.
 		 */
-		const BUILD = "1.0.5";
+		const BUILD = "1.0.6";
 
 		/** Geometry shared by the stylesheet and the inline detent positions. */
 		const THUMB = 26;
