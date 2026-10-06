@@ -120,6 +120,7 @@ window.__ModuleLoader__.load({
 			"menu.effort": "推理强度",
 			"menu.aria": "模型与推理强度",
 			"trigger.select": "选择模型",
+			"trigger.preparing": "正在准备该会话的模型目录…",
 			"trigger.aria": "选择模型，当前 {model}",
 			"trigger.ariaEffort": "选择模型，当前 {model}，推理强度 {effort}",
 			"trigger.loading": "正在应用选择",
@@ -132,12 +133,14 @@ window.__ModuleLoader__.load({
 			"empty.models": "没有可用的模型。",
 			"action.retry": "重试",
 			"error.sessionInUse": "该会话正被其他写入方占用，请退出其他正在运行的 DSH 后重试。",
+			"error.notReady": "该会话的模型目录尚未就绪，请稍后重试。",
 		};
 		const en = {
 			"menu.model": "Model",
 			"menu.effort": "Reasoning effort",
 			"menu.aria": "Model and reasoning effort",
 			"trigger.select": "Select model",
+			"trigger.preparing": "Preparing this session's model directory…",
 			"trigger.aria": "Select model, current {model}",
 			"trigger.ariaEffort": "Select model, current {model}, reasoning effort {effort}",
 			"trigger.loading": "Applying selection",
@@ -150,6 +153,7 @@ window.__ModuleLoader__.load({
 			"empty.models": "No models available.",
 			"action.retry": "Retry",
 			"error.sessionInUse": "Another writer holds this session — quit other running DSH instances and retry.",
+			"error.notReady": "This session's model directory is not ready yet — retry in a moment.",
 		};
 
 		/** Snapshot stand-in so hooks run before the real directory resolves. */
@@ -561,13 +565,51 @@ window.__ModuleLoader__.load({
 		/**
 		 * The composer's model seat: a trigger plus one panel holding the model
 		 * row and the reasoning bar.
-		 * @param props - injected face (available + shared directory store and
-		 * commit verb), the owner's `locked` share and the locale seat.
+		 * @param props - injected face (session id + lazy directory resolver),
+		 * the owner's `locked` share and the locale seat.
 		 * @returns the trigger and, while open, the panel.
 		 */
 		function ModelReasoningSeat(props) {
-			const { locked, available, directory, load, select, t } = props;
-			const store = directory === void 0 || directory === null ? EMPTY_STORE : directory;
+			const { locked, available, resolve, t } = props;
+
+			// Two framework rules shape this component's whole structure:
+			//
+			//  1. The injected face is memoized per (entry, binding) for the
+			//     lifetime of that binding, so it may NEVER encode readiness — a
+			//     "not ready" answer would be cached and never revisited.
+			//  2. Anything thrown from the inject factory or the render is reported
+			//     with abdicate:true, which retires this entry for good: the seat
+			//     falls back to the shipped control until the slot is re-declared.
+			//
+			// So the factory only hands over a resolver, and readiness lives HERE,
+			// where re-rendering is free: poll until the session's client-side
+			// scope exists, and meanwhile keep a placeholder on screen rather than
+			// rendering nothing.
+			const [resolved, setResolved] = useState(null);
+			const resolveRef = useRef(resolve);
+
+			useEffect(() => {
+				resolveRef.current = resolve;
+			}, [resolve]);
+
+			useEffect(() => {
+				let stopped = false;
+				let timer = 0;
+				const attempt = () => {
+					if (stopped) return;
+					const next = resolveRef.current();
+					setResolved(next);
+					if (next.directory === null) timer = setTimeout(attempt, 250);
+				};
+				attempt();
+				return () => {
+					stopped = true;
+					clearTimeout(timer);
+				};
+			}, [resolve]);
+
+			const directory = resolved === null ? null : resolved.directory;
+			const store = directory === null ? EMPTY_STORE : directory.store;
 			const state = useSyncExternalStore(
 				useCallback((notify) => store.subscribe(notify), [store]),
 				useCallback(() => store.getSnapshot(), [store]),
@@ -581,15 +623,21 @@ window.__ModuleLoader__.load({
 			const triggerRef = useRef(null);
 			const panelRef = useRef(null);
 			const searchRef = useRef(null);
-			const loadRef = useRef(load);
 
 			useEffect(() => {
-				loadRef.current = load;
-			}, [load]);
+				if (directory === null) return;
+				directory.load().catch(() => {});
+			}, [directory]);
 
-			useEffect(() => {
-				if (typeof loadRef.current === "function") loadRef.current();
-			}, [store]);
+			/**
+			 * Retry resolving the shared directory right now, bypassing the poll.
+			 * @returns whether the directory came back.
+			 */
+			const retry = () => {
+				const next = resolveRef.current();
+				setResolved(next);
+				return next.directory !== null;
+			};
 
 			const current = state.current ?? null;
 			const groups = Array.isArray(state.groups) ? state.groups : [];
@@ -673,7 +721,8 @@ window.__ModuleLoader__.load({
 			 * @returns the directory's selection outcome.
 			 */
 			const commitSelection = async (selection) => {
-				const result = await select(selection);
+				if (directory === null) throw new Error(t("error.notReady"));
+				const result = await directory.select(selection);
 				if (result !== void 0 && result !== null && result.ok === false) {
 					const code = result.error?.code;
 					throw new Error(code === "session/writer-held" ? t("error.sessionInUse") : result.error?.message ?? code);
@@ -725,7 +774,43 @@ window.__ModuleLoader__.load({
 				}
 			};
 
-			if (!available) return null;
+			const subagent = (() => {
+				try {
+					return available() === false;
+				} catch {
+					return false;
+				}
+			})();
+			if (subagent) return null;
+
+			// Before the session's directory resolves — and in the unlikely case it
+			// never does — a placeholder trigger holds the seat's place instead of
+			// leaving a hole in the composer row. Clicking it retries immediately;
+			// the poll above keeps retrying underneath either way. Note that this
+			// state is not a regression against the shipped control: that one asks
+			// the very same directory for its data.
+			if (directory === null) {
+				const why = resolved === null || resolved.error === null ? t("trigger.preparing") : resolved.error;
+				return h(
+					"div",
+					{ className: "mm_root" },
+					h("style", { key: "mm-style", dangerouslySetInnerHTML: { __html: CSS } }),
+					h(
+						"button",
+						{
+							type: "button",
+							ref: triggerRef,
+							className: "mm_trigger",
+							title: why,
+							"aria-label": `${t("trigger.select")} — ${why}`,
+							onClick: () => retry(),
+						},
+						h("span", { className: "mm_triggerIcon" }, h(ModelGlyph)),
+						h("span", { className: "mm_triggerLabel" }, t("trigger.select")),
+						h("span", { className: "mm_chevron" }, h(ChevronDown)),
+					),
+				);
+			}
 
 			const triggerLabel = modelLabel ?? t("trigger.select");
 			const triggerAria = pending
@@ -817,7 +902,7 @@ window.__ModuleLoader__.load({
 																type: "button",
 																className: "mm_retry",
 																onClick: () => {
-																	if (typeof loadRef.current === "function") loadRef.current();
+																	if (directory !== null) directory.load().catch(() => {});
 																},
 															},
 															t("action.retry"),
@@ -910,37 +995,27 @@ window.__ModuleLoader__.load({
 								priority: -1,
 								locale: NS,
 								inject: (sessionId) => {
-									// This runs INSIDE the slot entry's error boundary, and a
-									// throw here retires the entry for good: the seat silently
-									// falls back to the shipped control until the slot is
-									// re-declared (which is exactly what "the plugin stopped
-									// working after I switched workspace" looked like). A
-									// session whose client-side scope is not materialized yet
-									// must therefore degrade to "nothing to show" and recover
-									// by itself, never to an exception.
-									let directory = null;
-									try {
-										directory = models.directoryFor(sessionId);
-									} catch {
-										directory = null;
-									}
-									if (directory === null) {
-										return {
-											available: false,
-											directory: null,
-											load: () => {},
-											select: () => Promise.resolve({ ok: true, value: void 0 }),
-										};
-									}
-									const available = !isSubagent(sessionId);
+									// Two framework rules make this factory tiny on purpose:
+									//
+									//  * its result is memoized per (entry, binding) for the whole
+									//    life of that binding, so it must NEVER encode readiness —
+									//    a "not ready" answer would be cached and never revisited;
+									//  * it runs inside the slot entry's error boundary, and a
+									//    throw retires the entry for good, silently falling back to
+									//    the shipped control until the slot is re-declared.
+									//
+									// So it hands over a resolver and nothing else. Both calls below
+									// are total: they answer "no" instead of raising when the
+									// session's client-side scope has not materialized yet.
 									return {
-										available,
-										directory: directory.store,
-										load: () => {
-											if (available) directory.load().catch(() => {});
+										available: () => !isSubagent(sessionId),
+										resolve: () => {
+											try {
+												return { directory: models.directoryFor(sessionId), error: null };
+											} catch (error) {
+												return { directory: null, error: String((error && error.message) || error) };
+											}
 										},
-										select: (selection) =>
-											available ? directory.select(selection) : Promise.resolve({ ok: true, value: void 0 }),
 									};
 								},
 							},

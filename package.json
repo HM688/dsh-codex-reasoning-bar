@@ -1,6 +1,6 @@
 {
     "name":  "dsh-codex-reasoning-bar",
-    "version":  "1.0.1",
+    "version":  "1.0.2",
     "description":  "CodeX 一样的推理等级调整条：在 DeepSeek Harness 的模型选择面板里，用可拖动的粒子滑条调整推理强度，取代原来的推理等级列表。",
     "type":  "module",
     "license":  "MIT",
